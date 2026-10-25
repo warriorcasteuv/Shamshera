@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/login", "destination": "/index.html" },
+    { "source": "/admin-login", "destination": "/index.html" },
+    { "source": "/admin", "destination": "/index.html" },
+    { "source": "/bets", "destination": "/index.html" },
+    { "source": "/account", "destination": "/index.html" },
+    { "source": "/casino", "destination": "/index.html" },
+    { "source": "/casino/ludo", "destination": "/index.html" },
+    { "source": "/casino/:gameId", "destination": "/index.html" },
+    { "source": "/sport/:sportId", "destination": "/index.html" },
+    { "source": "/event/:eventId", "destination": "/index.html" }
+  ]
+}
