@@ -34,7 +34,7 @@ function post(origin: string, path: string, body: Record<string, string>) {
   })
 }
 
-test('customer password reset emails through Resend and revokes existing sessions', async () => {
+test('customer and admin password resets email codes and revoke existing sessions', async () => {
   let emailPayload: { from: string; to: string[]; subject: string; text: string } | undefined
   const resend = createServer(async (request, response) => {
     assert.equal(request.headers.authorization, 'Bearer re_test_key')
@@ -49,7 +49,7 @@ test('customer password reset emails through Resend and revokes existing session
   const probe = createServer()
   const apiPort = await listen(probe)
   await close(probe)
-  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'orixbet-password-reset-'))
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'lasersport-password-reset-'))
   const output: string[] = []
   let api: ChildProcess | undefined
 
@@ -60,10 +60,13 @@ test('customer password reset emails through Resend and revokes existing session
         ...process.env,
         NODE_ENV: 'test',
         API_PORT: String(apiPort),
-        DB_PATH: join(temporaryDirectory, 'orixbet.sqlite'),
+        DB_PATH: join(temporaryDirectory, 'lasersport.sqlite'),
         RESEND_API_KEY: 're_test_key',
-        RESEND_FROM: 'Orixbet <passwords@mail.orixbet.online>',
+        RESEND_FROM: 'LaserSport <passwords@lasersport.online>',
         RESEND_API_URL: `http://127.0.0.1:${resendPort}/emails`,
+        ADMIN_EMAIL: 'support@lasersport.online',
+        ADMIN_USERNAME: 'test-admin',
+        ADMIN_PASSWORD: 'Initial-admin-password-123',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -106,9 +109,9 @@ test('customer password reset emails through Resend and revokes existing session
     assert.deepEqual(await unknownEmail.json(), {
       message: 'If an account uses that email, a password reset code has been sent.',
     })
-    assert.equal(emailPayload?.from, 'Orixbet <passwords@mail.orixbet.online>')
+    assert.equal(emailPayload?.from, 'LaserSport <passwords@lasersport.online>')
     assert.deepEqual(emailPayload?.to, ['reset@example.com'])
-    assert.equal(emailPayload?.subject, 'Your Orixbet password reset code')
+    assert.equal(emailPayload?.subject, 'Your LaserSport password reset code')
     const codeMatch = emailPayload?.text.match(/reset code is (\d{6})/)
     assert.ok(codeMatch, 'Resend message should contain the reset code')
 
@@ -140,6 +143,49 @@ test('customer password reset emails through Resend and revokes existing session
       password: 'Another-password-789',
     })
     assert.equal(reusedToken.status, 400)
+
+    const adminLogin = await post(`${origin}`, '/api/admin/login', {
+      username: 'test-admin',
+      password: 'Initial-admin-password-123',
+    })
+    assert.equal(adminLogin.status, 200)
+    const adminSessionCookie = adminLogin.headers.get('set-cookie')?.split(';', 1)[0]
+    assert.ok(adminSessionCookie)
+
+    const requestAdminReset = await post(`${origin}`, '/api/admin/password-reset/request', {})
+    assert.equal(requestAdminReset.status, 200)
+    assert.deepEqual(await requestAdminReset.json(), {
+      message: 'If the admin account is configured, a reset code has been sent to its recovery email.',
+    })
+    assert.deepEqual(emailPayload?.to, ['support@lasersport.online'])
+    assert.equal(emailPayload?.subject, 'LaserSport main admin password reset code')
+    const adminCodeMatch = emailPayload?.text.match(/reset code is (\d{6})/)
+    assert.ok(adminCodeMatch, 'Admin reset message should contain the reset code')
+
+    const completeAdminReset = await post(`${origin}`, '/api/admin/password-reset/complete', {
+      code: adminCodeMatch[1],
+      password: 'Replacement-admin-password-456',
+    })
+    assert.equal(completeAdminReset.status, 200, await completeAdminReset.text())
+    const revokedAdminSession = await fetch(`${origin}/api/auth/session`, {
+      headers: { Cookie: adminSessionCookie },
+    })
+    assert.equal(revokedAdminSession.status, 401)
+    const oldAdminLogin = await post(`${origin}`, '/api/admin/login', {
+      username: 'test-admin',
+      password: 'Initial-admin-password-123',
+    })
+    assert.equal(oldAdminLogin.status, 401)
+    const newAdminLogin = await post(`${origin}`, '/api/admin/login', {
+      username: 'test-admin',
+      password: 'Replacement-admin-password-456',
+    })
+    assert.equal(newAdminLogin.status, 200)
+    const reusedAdminCode = await post(`${origin}`, '/api/admin/password-reset/complete', {
+      code: adminCodeMatch[1],
+      password: 'Another-admin-password-789',
+    })
+    assert.equal(reusedAdminCode.status, 400)
   } finally {
     if (api && api.exitCode === null) {
       api.kill('SIGTERM')

@@ -84,9 +84,9 @@ export function Account() {
           <h2>Coins & requests</h2>
           <p>Balance: <strong>{isUnlimited ? 'Unlimited coins' : `${formatVc(balance)} coins`}</strong></p>
         </div>
-        <span className="status-badge pending">Demo review</span>
+        <span className="status-badge pending">Requests not processed</span>
       </div>
-      <p className="demo-notice">Demo only. Requests and uploaded images stay in this browser; no payment is processed.</p>
+      <p className="feature-notice">Requests and uploaded images are saved only in this browser. No payment is processed.</p>
       <div className="account-grid">
         <form className="pad card request-form" onSubmit={onDepositSubmit}>
           <div className="form-heading"><span>01</span><h3>Deposit coins</h3></div>

@@ -321,7 +321,7 @@ export function Ludo() {
     <section className="ludo-page">
       <div className="page-head">
         <div><h2>Ludo</h2><p>Play a fair race against the computer or invite friends to a live room.</p></div>
-        <span className="casino-demo-badge">10% winner fee</span>
+        <span className="casino-practice-badge">10% winner fee</span>
       </div>
       <div className="ludo-intro">
         <span aria-hidden="true">🎲</span>

@@ -195,7 +195,7 @@ export function Casino() {
 
   function cashOutAviator() {
     if (!flight || flightMultiplier >= flight.crashAt) return
-    setResult(`Demo cash-out at ${flightMultiplier.toFixed(2)}×. No points or coins were used.`)
+    setResult(`Practice cash-out at ${flightMultiplier.toFixed(2)}×. No points or coins were used.`)
     setFlight(null)
   }
 
@@ -206,14 +206,14 @@ export function Casino() {
           <h2>Casino</h2>
           <p>Take a break from the markets with a few games of chance.</p>
         </div>
-        <span className="casino-demo-badge">Selectable demo stakes</span>
+        <span className="casino-practice-badge">Practice stakes only</span>
       </div>
 
       {!activeGame && <div className="casino-banner">
         <div>
           <span className="casino-eyebrow">THE CASINO LOUNGE</span>
           <h3>Pick a game. Play for fun.</h3>
-          <p>Try a free demo, or play Ludo with friends using coins.</p>
+          <p>Play free rounds, or play Ludo with friends using coins.</p>
         </div>
         <span className="casino-banner-icon" aria-hidden="true">♠</span>
       </div>}
@@ -254,14 +254,14 @@ export function Casino() {
         <section className={`casino-table casino-card-${activeGame.mood}`} aria-labelledby="casino-table-title">
           <div className="casino-table-heading">
             <div>
-              <span className="casino-eyebrow">FREE DEMO TABLE</span>
+              <span className="casino-eyebrow">NO-WAGER TABLE</span>
               <h3 id="casino-table-title">{activeGame.icon} {activeGame.name}</h3>
             </div>
             <Link className="ghost" to="/casino">All games</Link>
           </div>
           <p className="casino-rules">{activeGame.description} Stake presets are display-only; no coins or prizes are used.</p>
-          <div className="casino-stake-picker" aria-label="Select a demo stake">
-            <strong>Demo stake: {selectedStake} coins</strong>
+          <div className="casino-stake-picker" aria-label="Select a practice stake">
+            <strong>Practice stake: {selectedStake} coins</strong>
             <div className="casino-stake-options">
               {stakeOptions.map((stake) => (
                 <button
@@ -341,7 +341,7 @@ export function Casino() {
                   </div>
                 ))}
               </div>}
-              <p className="casino-rules">Demo rule: deal two cards to each side; 10/J/Q/K count as 0, ace as 1. Closest to 9 wins. No wagers.</p>
+              <p className="casino-rules">Deal two cards to each side; 10/J/Q/K count as 0, ace as 1. Closest to 9 wins. No wagers or prizes are used.</p>
               <button className="primary" type="button" onClick={dealBaccarat}>Deal cards</button>
             </div>
           )}
@@ -356,7 +356,7 @@ export function Casino() {
 
           {activeGame.id === 'plinko' && (
             <div className="casino-controls">
-              <div className="plinko-board" aria-label="Plinko demo board">
+              <div className="plinko-board" aria-label="Plinko practice board">
                 {Array.from({ length: 7 }, (_, row) => <div className="plinko-row" key={row}>{Array.from({ length: row + 1 }, (_, peg) => <span key={peg}>•</span>)}</div>)}
                 {plinkoPath && <p className="plinko-path">Ball path: {plinkoPath}</p>}
                 <div className="plinko-bins">{Array.from({ length: 9 }, (_, bin) => <span key={bin}>{bin + 1}</span>)}</div>
@@ -377,9 +377,9 @@ export function Casino() {
                 <strong>{flightMultiplier.toFixed(2)}×</strong>
                 <span>{flight ? 'IN FLIGHT' : result.startsWith('The plane crashed') ? 'FLIGHT ENDED' : 'READY'}</span>
               </div>
-              <p className="casino-rules">A demo crash point is generated each round. About half of flights end before 2×; there is no stake or payout.</p>
+              <p className="casino-rules">A practice crash point is generated each round. About half of flights end before 2×; there is no stake or payout.</p>
               {flight
-                ? <button className="primary" type="button" onClick={cashOutAviator}>End demo flight at {flightMultiplier.toFixed(2)}×</button>
+                ? <button className="primary" type="button" onClick={cashOutAviator}>End practice flight at {flightMultiplier.toFixed(2)}×</button>
                 : <button className="primary" type="button" onClick={launchAviator}>Launch plane</button>}
             </div>
           )}

@@ -48,7 +48,8 @@ button { cursor: pointer; }
   width: 34px; height: 34px; border-radius: 8px;
   background: linear-gradient(180deg, var(--gold), var(--gold-2));
   color: #1a1406; display: grid; place-items: center;
-  font-family: "Barlow Condensed", sans-serif; font-weight: 700; font-size: 20px;
+  font-family: "Barlow Condensed", sans-serif; font-weight: 700; font-size: 15px;
+  letter-spacing: 0.02em;
 }
 .brand h1 {
   margin: 0; font-family: "Barlow Condensed", sans-serif;
@@ -192,6 +193,10 @@ card, .event-card, .market, .account-grid > * {
   width: 100%; margin: 14px 0; padding: 12px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--bg); color: var(--text);
 }
+.login-card .login-role-select {
+  width: 100%; margin: 4px 0 8px; padding: 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+}
 .login-switch {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin-bottom: 16px; padding: 5px; border: 1px solid var(--line); border-radius: 999px;
@@ -302,7 +307,7 @@ card, .event-card, .market, .account-grid > * {
   .odds small { font-size: 8px; }
 }
 
-.demo-notice {
+.feature-notice {
   margin: 0 0 14px;
   padding: 10px 12px;
   border-left: 3px solid var(--gold);
@@ -411,7 +416,7 @@ card, .event-card, .market, .account-grid > * {
 .customer-history-list { display: grid; gap: 7px; margin-top: 8px; }
 .customer-history-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; }
 .customer-history-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
-.casino-demo-badge {
+.casino-practice-badge {
   padding: 6px 10px;
   border: 1px solid rgba(245, 196, 81, 0.4);
   border-radius: 999px;

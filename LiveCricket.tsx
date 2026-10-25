@@ -179,7 +179,7 @@ export function LiveCricketEvent({ matchId }: { matchId: string }) {
         </div>
       </article>
 
-      <p className="demo-notice">
+      <p className="feature-notice">
         Live score is supplied by the cricket feed. This free score feed does not provide verified Back/Lay prices or session market odds; those must come from a separate authorized odds provider before they can be shown as live.
       </p>
       <Link className="ghost" to="/sport/cricket">Back to cricket</Link>

@@ -1,6 +1,6 @@
 import express, { type Request, type Response } from 'express'
 import { createHash, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import nodemailer from 'nodemailer'
@@ -79,7 +79,15 @@ database.exec(`
   CREATE TABLE IF NOT EXISTS system_admin (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     player_id TEXT NOT NULL UNIQUE REFERENCES players(id),
-    username TEXT NOT NULL UNIQUE
+    username TEXT NOT NULL UNIQUE,
+    password_salt TEXT,
+    password_hash TEXT
+  );
+  CREATE TABLE IF NOT EXISTS admin_password_reset_tokens (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    token_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS bets (
     id TEXT PRIMARY KEY, player_id TEXT NOT NULL REFERENCES players(id), placed_at TEXT NOT NULL,
@@ -109,6 +117,13 @@ database.exec(`
     PRIMARY KEY (room_id, player_id), UNIQUE (room_id, seat)
   );
 `)
+const systemAdminColumns = database.prepare('PRAGMA table_info(system_admin)').all() as { name: string }[]
+if (!systemAdminColumns.some((column) => column.name === 'password_salt')) {
+  database.exec('ALTER TABLE system_admin ADD COLUMN password_salt TEXT')
+}
+if (!systemAdminColumns.some((column) => column.name === 'password_hash')) {
+  database.exec('ALTER TABLE system_admin ADD COLUMN password_hash TEXT')
+}
 const resetTokenColumns = database.prepare('PRAGMA table_info(password_reset_tokens)').all() as { name: string }[]
 if (!resetTokenColumns.some((column) => column.name === 'attempts')) {
   database.exec('ALTER TABLE password_reset_tokens ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0')
@@ -266,7 +281,7 @@ function resetMailer() {
       ? process.env.RESEND_API_URL
       : 'https://api.resend.com/emails'
     return {
-      send: async (to: string, code: string) => {
+      send: async (to: string, code: string, subject = 'Your LaserSport password reset code', text = `Your LaserSport password reset code is ${code}.\n\nEnter this code within 10 minutes to choose a new password. If you did not request this, you can ignore this email.`) => {
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -276,8 +291,8 @@ function resetMailer() {
           body: JSON.stringify({
             from: resendFrom,
             to: [to],
-            subject: 'Your Orixbet password reset code',
-            text: `Your Orixbet password reset code is ${code}.\n\nEnter this code within 10 minutes to choose a new password. If you did not request this, you can ignore this email.`,
+            subject,
+            text,
           }),
           signal: AbortSignal.timeout(10_000),
         })
@@ -308,12 +323,12 @@ function resetMailer() {
     ...(user && password ? { auth: { user, pass: password } } : {}),
   })
   return {
-    send: async (to: string, code: string) => {
+    send: async (to: string, code: string, subject = 'Your LaserSport password reset code', text = `Your LaserSport password reset code is ${code}.\n\nEnter this code within 10 minutes to choose a new password. If you did not request this, you can ignore this email.`) => {
       await transporter.sendMail({
         from,
         to,
-        subject: 'Your Orixbet password reset code',
-        text: `Your Orixbet password reset code is ${code}.\n\nEnter this code within 10 minutes to choose a new password. If you did not request this, you can ignore this email.`,
+        subject,
+        text,
       })
     },
   }
@@ -616,6 +631,87 @@ app.post('/api/auth/login', endpoint((request, response) => {
 
 const passwordResetAttempts = new Map<string, number[]>()
 
+app.post('/api/admin/password-reset/request', endpoint(async (_request, response) => {
+  const configuredAddress = process.env.ADMIN_EMAIL
+  if (!configuredAddress) {
+    throw new HttpError(503, 'Configure ADMIN_EMAIL on the API server before requesting an admin password reset.')
+  }
+  const { email } = normalizeContact('email', configuredAddress)
+  if (!email) throw new HttpError(503, 'Configure a valid ADMIN_EMAIL on the API server.')
+  const mailer = resetMailer()
+  const now = Date.now()
+  for (const [address, attempts] of passwordResetAttempts) {
+    if (!attempts.some((at) => now - at < 15 * 60 * 1000)) passwordResetAttempts.delete(address)
+  }
+  const key = `admin:${email}`
+  if (passwordResetAttempts.size >= 10_000 && !passwordResetAttempts.has(key)) {
+    throw new HttpError(503, 'Password reset is temporarily unavailable. Please try again later.')
+  }
+  const recentAttempts = (passwordResetAttempts.get(key) ?? []).filter((at) => now - at < 15 * 60 * 1000)
+  if (recentAttempts.length >= 3) throw new HttpError(429, 'Too many reset requests. Please try again later.')
+  recentAttempts.push(now)
+  passwordResetAttempts.set(key, recentAttempts)
+
+  const admin = database.prepare('SELECT player_id FROM system_admin WHERE id = 1')
+    .get() as { player_id: string } | undefined
+  if (admin) {
+    const code = randomInt(0, 1_000_000).toString().padStart(6, '0')
+    const tokenHash = createHash('sha256').update(code).digest('hex')
+    const expiresAt = new Date(now + 10 * 60 * 1000).toISOString()
+    database.prepare(`
+      INSERT INTO admin_password_reset_tokens (id, token_hash, expires_at, attempts)
+      VALUES (1, ?, ?, 0)
+      ON CONFLICT(id) DO UPDATE SET token_hash = excluded.token_hash,
+        expires_at = excluded.expires_at, attempts = 0
+    `).run(tokenHash, expiresAt)
+    try {
+      await mailer.send(
+        email,
+        code,
+        'LaserSport main admin password reset code',
+        `Your LaserSport main admin password reset code is ${code}.\n\nEnter this code within 10 minutes to set a new admin password. If you did not request this, you can ignore this email.`,
+      )
+    } catch (error) {
+      database.prepare('DELETE FROM admin_password_reset_tokens WHERE id = 1').run()
+      console.error('Could not send the main admin password reset email.', error)
+      throw new HttpError(502, 'Could not send the reset email. Please try again later.')
+    }
+  }
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, 500 - (Date.now() - now))))
+  response.json({ message: 'If the admin account is configured, a reset code has been sent to its recovery email.' })
+}))
+
+app.post('/api/admin/password-reset/complete', endpoint((request, response) => {
+  const body = requestObject(request)
+  const code = typeof body.code === 'string' ? body.code : ''
+  const password = typeof body.password === 'string' ? body.password : ''
+  if (!/^\d{6}$/.test(code)) throw new HttpError(400, 'Enter the 6-digit reset code from your email.')
+  if (password.length < 12 || password.length > 128) {
+    throw new HttpError(400, 'Admin password must be 12 to 128 characters.')
+  }
+  const tokenHash = createHash('sha256').update(code).digest('hex')
+  const resetSucceeded = transaction(() => {
+    const reset = database.prepare('SELECT token_hash, expires_at, attempts FROM admin_password_reset_tokens WHERE id = 1')
+      .get() as { token_hash: string; expires_at: string; attempts: number } | undefined
+    if (!reset || Date.parse(reset.expires_at) <= Date.now() || reset.attempts >= 5) return false
+    if (reset.token_hash !== tokenHash) {
+      database.prepare('UPDATE admin_password_reset_tokens SET attempts = attempts + 1 WHERE id = 1').run()
+      return false
+    }
+    const admin = database.prepare('SELECT player_id FROM system_admin WHERE id = 1').get() as { player_id: string } | undefined
+    if (!admin) return false
+    const salt = randomBytes(16).toString('hex')
+    const passwordHash = scryptSync(password, salt, 64).toString('hex')
+    database.prepare('UPDATE system_admin SET password_salt = ?, password_hash = ? WHERE id = 1')
+      .run(salt, passwordHash)
+    database.prepare('DELETE FROM admin_password_reset_tokens WHERE id = 1').run()
+    database.prepare('DELETE FROM auth_sessions WHERE player_id = ?').run(admin.player_id)
+    return true
+  })
+  if (!resetSucceeded) throw new HttpError(400, 'The reset code is invalid or expired. Request a new one.')
+  response.json({ message: 'Admin password updated. Sign in with your new password.' })
+}))
+
 app.post('/api/auth/password-reset/request', endpoint(async (request, response) => {
   const body = requestObject(request)
   const { email } = normalizeContact('email', body.email)
@@ -700,28 +796,43 @@ app.post('/api/admin/login', endpoint((request, response) => {
   const password = typeof body.password === 'string' ? body.password : ''
   const usernameMatches = createHash('sha256').update(username).digest()
   const configuredUsername = createHash('sha256').update(configured.username).digest()
-  const passwordMatches = createHash('sha256').update(password).digest()
-  const configuredPassword = createHash('sha256').update(configured.password).digest()
-  if (!timingSafeEqual(usernameMatches, configuredUsername) || !timingSafeEqual(passwordMatches, configuredPassword)) {
+  if (!timingSafeEqual(usernameMatches, configuredUsername)) {
     throw new HttpError(401, 'Admin username or password is incorrect.')
   }
-  const existing = database.prepare('SELECT player_id, username FROM system_admin WHERE id = 1')
-    .get() as { player_id: string; username: string } | undefined
+  const existing = database.prepare('SELECT player_id, username, password_salt, password_hash FROM system_admin WHERE id = 1')
+    .get() as { player_id: string; username: string; password_salt: string | null; password_hash: string | null } | undefined
   if (existing && existing.username !== configured.username) {
     throw new HttpError(409, 'The server admin username changed. Update the server admin account before signing in.')
   }
+  const passwordMatches = existing?.password_salt && existing.password_hash
+    ? timingSafeEqual(
+      scryptSync(password, existing.password_salt, 64),
+      Buffer.from(existing.password_hash, 'hex'),
+    )
+    : (() => {
+      const attempted = createHash('sha256').update(password).digest()
+      const expected = createHash('sha256').update(configured.password).digest()
+      return timingSafeEqual(attempted, expected)
+    })()
+  if (!passwordMatches) throw new HttpError(401, 'Admin username or password is incorrect.')
   const playerId = existing?.player_id ?? randomUUID()
   if (!existing) {
     transaction(() => {
       const at = new Date().toISOString()
+      const passwordSalt = randomBytes(16).toString('hex')
+      const passwordHash = scryptSync(configured.password, passwordSalt, 64).toString('hex')
       database.prepare('INSERT INTO players (id, name, balance, created_at) VALUES (?, ?, 0, ?)')
         .run(playerId, 'Main Admin', at)
       database.prepare(`INSERT INTO account_roles
         (player_id, role, status, permissions, created_at) VALUES (?, 'main_admin', 'active', '{}', ?)`)
         .run(playerId, at)
-      database.prepare('INSERT INTO system_admin (id, player_id, username) VALUES (1, ?, ?)')
-        .run(playerId, configured.username)
+      database.prepare('INSERT INTO system_admin (id, player_id, username, password_salt, password_hash) VALUES (1, ?, ?, ?, ?)')
+        .run(playerId, configured.username, passwordSalt, passwordHash)
     })
+  } else if (!existing.password_salt || !existing.password_hash) {
+    const passwordSalt = randomBytes(16).toString('hex')
+    database.prepare('UPDATE system_admin SET password_salt = ?, password_hash = ? WHERE id = 1')
+      .run(passwordSalt, scryptSync(configured.password, passwordSalt, 64).toString('hex'))
   }
   issueSession(playerId, response)
   response.json(snapshot(playerId))
@@ -729,13 +840,16 @@ app.post('/api/admin/login', endpoint((request, response) => {
 
 app.post('/api/staff/login', endpoint((request, response) => {
   const body = requestObject(request)
+  if (body.role !== 'ceo' && body.role !== 'manager' && body.role !== 'employee') {
+    throw new HttpError(400, 'Choose a valid staff designation.')
+  }
   const employeeId = typeof body.employeeId === 'string' ? body.employeeId.trim().toUpperCase() : ''
   const activationCode = typeof body.activationCode === 'string' ? body.activationCode.trim().toUpperCase() : ''
   if (!employeeId || !activationCode) throw new HttpError(400, 'Enter your employee ID and activation code.')
   const staff = database.prepare(`
     SELECT r.player_id, r.status, r.activation_salt, r.activation_hash
-    FROM account_roles r WHERE r.employee_id = ? AND r.role != 'main_admin'
-  `).get(employeeId) as Pick<RoleRow, 'player_id' | 'status' | 'activation_salt' | 'activation_hash'> | undefined
+    FROM account_roles r WHERE r.employee_id = ? AND r.role = ?
+  `).get(employeeId, body.role) as Pick<RoleRow, 'player_id' | 'status' | 'activation_salt' | 'activation_hash'> | undefined
   if (!staff || !staff.activation_salt || !staff.activation_hash) {
     throw new HttpError(401, 'Employee ID or activation code is incorrect.')
   }
@@ -1036,5 +1150,16 @@ app.post('/api/settle', endpoint((request, response) => {
   response.json(snapshot(player.id))
 }))
 
-const port = Number(process.env.API_PORT ?? 3001)
+const webDirectory = join(process.cwd(), 'dist')
+if (existsSync(webDirectory)) {
+  app.use(express.static(webDirectory))
+  app.use((request, response, next) => {
+    if (request.method !== 'GET' || request.path.startsWith('/api/')) return next()
+    response.sendFile(join(webDirectory, 'index.html'), (error) => {
+      if (error) next(error)
+    })
+  })
+}
+
+const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3001)
 app.listen(port, '0.0.0.0', () => console.log(`Credits API listening on ${port}`))

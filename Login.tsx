@@ -83,7 +83,7 @@ export function Login() {
           </div>
           <span className="credits-chip">Customer account</span>
         </>}
-        <h1>{flow === 'request-reset' ? 'Reset password' : flow === 'complete-reset' ? 'Choose a new password' : mode === 'signup' ? 'Create account' : 'Orixbet'}</h1>
+        <h1>{flow === 'request-reset' ? 'Reset password' : flow === 'complete-reset' ? 'Choose a new password' : mode === 'signup' ? 'Create account' : 'LaserSport'}</h1>
         {flow === 'request-reset' && <p>Enter the email address on your account and we’ll send a 6-digit reset code.</p>}
         {flow === 'complete-reset' && <p>Enter the code sent to {identifier} and choose a new password.</p>}
         {flow === 'account' && mode === 'signup' && <label className="auth-field">Full name<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required minLength={2} maxLength={48} /></label>}
@@ -154,27 +154,61 @@ export function Login() {
 export function AdminLogin() {
   const navigate = useNavigate()
   const setServerProfile = useSherabet((s) => s.setServerProfile)
-  const [mode, setMode] = useState<'admin' | 'staff'>('admin')
+  const [designation, setDesignation] = useState<'main_admin' | 'ceo' | 'manager' | 'employee'>('main_admin')
+  const [flow, setFlow] = useState<'login' | 'request-reset' | 'complete-reset'>('login')
   const [username, setUsername] = useState('')
+  const [resetCode, setResetCode] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [message, setMessage] = useState('')
+  const [messageIsError, setMessageIsError] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const [password, setPassword] = useState('')
   const [employeeId, setEmployeeId] = useState('')
   const [activationCode, setActivationCode] = useState('')
+  const designationLabel = designation === 'main_admin'
+    ? 'Main admin'
+    : designation === 'ceo' ? 'CEO' : designation === 'manager' ? 'Manager' : 'Employee'
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setSubmitting(true)
     setMessage('')
+    setMessageIsError(false)
     try {
-      const response = await fetch(mode === 'admin' ? '/api/admin/login' : '/api/staff/login', {
+      if (flow === 'request-reset') {
+        const response = await fetch('/api/admin/password-reset/request', { method: 'POST' })
+        const result = await response.json() as { message?: string; error?: string }
+        if (!response.ok) throw new Error(result.error ?? 'Could not send the reset code. Try again.')
+        setFlow('complete-reset')
+        setMessage(result.message ?? 'If the admin account is configured, a reset code has been sent to its recovery email.')
+        return
+      }
+      if (flow === 'complete-reset') {
+        if (!/^\d{6}$/.test(resetCode)) throw new Error('Enter the 6-digit reset code from your email.')
+        if (password !== confirmPassword) throw new Error('The passwords do not match.')
+        const response = await fetch('/api/admin/password-reset/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: resetCode, password }),
+        })
+        const result = await response.json() as { message?: string; error?: string }
+        if (!response.ok) throw new Error(result.error ?? 'Could not reset the password. Request a new code.')
+        setFlow('login')
+        setPassword('')
+        setConfirmPassword('')
+        setResetCode('')
+        setMessage(result.message ?? 'Admin password updated. Sign in with your new password.')
+        return
+      }
+      const isMainAdmin = designation === 'main_admin'
+      const response = await fetch(isMainAdmin ? '/api/admin/login' : '/api/staff/login', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mode === 'admin'
+        body: JSON.stringify(isMainAdmin
           ? { username, password }
-          : { employeeId, activationCode }),
+          : { employeeId, activationCode, role: designation }),
       })
       const result = await response.json() as AccountProfile & { error?: string }
       if (!response.ok || !result.user || !result.playerId) {
@@ -184,6 +218,7 @@ export function AdminLogin() {
       navigate('/admin')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not connect to the login service.')
+      setMessageIsError(true)
     } finally {
       setSubmitting(false)
     }
@@ -192,23 +227,88 @@ export function AdminLogin() {
   return (
     <div className="login">
       <form className="login-card admin-login-card" onSubmit={onSubmit}>
-        <div className="login-switch" aria-label="Login type switch">
-          <button type="button" className="login-switch-link" onClick={() => navigate('/login')}>Customer Login</button>
-          <button type="button" className={`login-switch-link${mode === 'admin' ? ' active' : ''}`} onClick={() => { setMode('admin'); setMessage('') }}>Main admin</button>
-          <button type="button" className={`login-switch-link${mode === 'staff' ? ' active' : ''}`} onClick={() => { setMode('staff'); setMessage('') }}>Team member</button>
-        </div>
-        <span className="credits-chip">{mode === 'admin' ? 'Main admin' : 'Staff account'}</span>
-        <h1>{mode === 'admin' ? 'Admin Login' : 'Team Login'}</h1>
-        <p>{mode === 'admin' ? 'Sign in with the credentials configured on the server.' : 'Use the employee ID and private activation code from your invitation.'}</p>
-        {mode === 'admin' ? <>
+        <label className="auth-field">Designation<select
+          className="login-role-select"
+          aria-label="Designation"
+          value={designation}
+          onChange={(event) => {
+            const selected = event.target.value
+            if (selected === 'main_admin' || selected === 'ceo' || selected === 'manager' || selected === 'employee') {
+              setDesignation(selected)
+              setFlow('login')
+              setMessage('')
+              setMessageIsError(false)
+            }
+          }}
+        >
+          <option value="main_admin">Main admin</option>
+          <option value="ceo">CEO</option>
+          <option value="manager">Manager</option>
+          <option value="employee">Employee</option>
+        </select></label>
+        <span className="credits-chip">{designationLabel}</span>
+        <h1>{flow === 'request-reset' ? 'Reset admin password' : flow === 'complete-reset' ? 'Choose a new password' : designation === 'main_admin' ? 'Admin Login' : `${designationLabel} Login`}</h1>
+        <p>{flow === 'request-reset'
+          ? 'We’ll send a 6-digit reset code to the main admin recovery email.'
+          : flow === 'complete-reset'
+            ? 'Enter the code from your email and choose a new password.'
+            : designation === 'main_admin'
+              ? 'Sign in with the credentials configured on the server.'
+              : 'Use the employee ID and private activation code from your invitation.'}</p>
+        {flow === 'login' && designation === 'main_admin' ? <>
           <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Admin username" required aria-label="Admin username" autoComplete="username" />
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Admin password" required aria-label="Admin password" autoComplete="current-password" />
-        </> : <>
+        </> : flow === 'login' ? <>
           <input value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder="Employee ID" required aria-label="Employee ID" autoComplete="username" />
           <input type="password" value={activationCode} onChange={(e) => setActivationCode(e.target.value)} placeholder="Activation code" required aria-label="Activation code" autoComplete="current-password" />
+        </> : null}
+        {flow === 'complete-reset' && <>
+          <label className="auth-field">6-digit reset code<input
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={resetCode}
+            onChange={(event) => setResetCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+            minLength={6}
+            maxLength={6}
+            required
+          /></label>
+          <label className="auth-field">New password<input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="new-password"
+            minLength={12}
+            maxLength={128}
+            required
+          /></label>
+          <label className="auth-field">Confirm new password<input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            autoComplete="new-password"
+            minLength={12}
+            maxLength={128}
+            required
+          /></label>
         </>}
-        {message && <p className="flash error" role="status">{message}</p>}
-        <button className="primary" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : mode === 'admin' ? 'Enter Admin Desk' : 'Sign in to team account'}</button>
+        {message && <p className={`flash${messageIsError ? ' error' : ''}`} role="status">{message}</p>}
+        {flow === 'login' && designation === 'main_admin' && <button
+          type="button"
+          className="alt-link"
+          onClick={() => { setFlow('request-reset'); setMessage(''); setMessageIsError(false) }}
+        >Forgot password?</button>}
+        <button className="primary" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : flow === 'request-reset' ? 'Send reset code' : flow === 'complete-reset' ? 'Verify code & update password' : designation === 'main_admin' ? 'Enter Admin Desk' : `Sign in as ${designationLabel}`}</button>
+        {flow === 'complete-reset' && <p className="auth-switch-copy">Need another code? <button type="button" className="login-switch-link" onClick={() => {
+          setFlow('request-reset')
+          setResetCode('')
+          setMessage('')
+          setMessageIsError(false)
+        }}>Send again</button></p>}
+        {flow !== 'login' && <p className="auth-switch-copy"><button type="button" className="login-switch-link" onClick={() => {
+          setFlow('login')
+          setMessage('')
+          setMessageIsError(false)
+        }}>Back to admin login</button></p>}
       </form>
     </div>
   )

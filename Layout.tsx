@@ -49,9 +49,9 @@ export function Layout() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">O</div>
+          <div className="brand-mark">LS</div>
           <div>
-            <h1>Orixbet</h1>
+            <h1>LaserSport</h1>
             <small>Sports exchange</small>
           </div>
           <span className="credits-chip">Coins</span>
@@ -76,7 +76,7 @@ export function Layout() {
         </div>
       </header>
       <p className="notice">
-        Demo preview only. Coin requests and uploaded images are stored in this browser.
+        Coin requests and uploaded images are stored only in this browser. No payment is processed.
       </p>
       <div className="workspace">
         <aside className="sidebar">
@@ -97,7 +97,7 @@ export function Layout() {
             className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
             to="/casino"
           >
-            Casino <em>Demo games</em>
+            Casino <em>Games</em>
           </NavLink>
         </aside>
         <main className="main">

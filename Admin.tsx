@@ -206,8 +206,8 @@ export function Admin() {
   }
 
   return <section>
-    <div className="page-head"><div><h2>Admin desk</h2><p>Manage coin requests, payment QR codes, and team access.</p></div><div className="row-actions"><span className="status-badge pending">Local preview</span><button className="ghost" type="button" onClick={onLogOut}>Log out</button></div></div>
-    <p className="demo-notice">Staff roles and coin transfers are checked and recorded by the server. Uploaded images and payment requests remain local preview features.</p>
+    <div className="page-head"><div><h2>Admin desk</h2><p>Manage coin requests, payment QR codes, and team access.</p></div><div className="row-actions"><span className="status-badge pending">Browser-only items</span><button className="ghost" type="button" onClick={onLogOut}>Log out</button></div></div>
+    <p className="feature-notice">Staff roles and coin transfers are checked and recorded by the server. QR uploads and payment requests are stored only in this browser; no payment is processed.</p>
     {!isMainAdmin && !activeEmployee && <div className="pad card"><h3>Access not assigned</h3><p className="tiny">Only server-authenticated team accounts can open the staff desk.</p></div>}
     {(isMainAdmin || activeEmployee) && <>
       <div className="admin-meta"><strong>{role?.replace('_', ' ')}</strong><span>Signed in as {user}</span></div>

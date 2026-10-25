@@ -1,5 +1,5 @@
 {
-  "name": "orixbet",
+  "name": "lasersport",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "node --env-file-if-exists=.env --import tsx server.ts",
+    "start": "node --import tsx server.ts",
     "start:api": "node --env-file-if-exists=.env --import tsx server.ts",
     "dev:web": "vite --host 0.0.0.0",
     "build": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && vite build",
