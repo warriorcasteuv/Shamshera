@@ -3,6 +3,18 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { useSherabet } from './store'
 import type { AccountProfile } from './types'
 
+async function parseApiResponse<T>(response: Response): Promise<T> {
+  const body = await response.text()
+  try {
+    return JSON.parse(body) as T
+  } catch {
+    if (response.status === 404 || response.status >= 500) {
+      throw new Error('The login service is temporarily unavailable. Please try again shortly.')
+    }
+    throw new Error('The server returned an invalid response. Please try again.')
+  }
+}
+
 export function Login() {
   const user = useSherabet((s) => s.user)
   const setServerProfile = useSherabet((s) => s.setServerProfile)
@@ -32,7 +44,7 @@ export function Login() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: identifier }),
         })
-        const result = await response.json() as { message?: string; error?: string }
+        const result = await parseApiResponse(response) as { message?: string; error?: string }
         if (!response.ok) throw new Error(result.error ?? 'Could not send a reset code. Try again.')
         setFlow('complete-reset')
         setMessage(result.message ?? 'If an account uses that email, a password reset code has been sent.')
@@ -46,7 +58,7 @@ export function Login() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: identifier, code: resetCode, password }),
         })
-        const result = await response.json() as { message?: string; error?: string }
+        const result = await parseApiResponse(response) as { message?: string; error?: string }
         if (!response.ok) throw new Error(result.error ?? 'Could not reset the password. Request a new code.')
         setFlow('account')
         setMode('login')
@@ -62,7 +74,7 @@ export function Login() {
         credentials: 'include',
         body: JSON.stringify({ method, identifier, password, ...(mode === 'signup' ? { name } : {}) }),
       })
-      const result = await response.json() as AccountProfile & { error?: string }
+      const result = await parseApiResponse(response) as AccountProfile & { error?: string }
       if (!response.ok || !result.user) throw new Error(result.error ?? 'Could not authenticate. Try again.')
       setServerProfile(result)
       navigate('/')
@@ -178,7 +190,7 @@ export function AdminLogin() {
     try {
       if (flow === 'request-reset') {
         const response = await fetch('/api/admin/password-reset/request', { method: 'POST' })
-        const result = await response.json() as { message?: string; error?: string }
+        const result = await parseApiResponse(response) as { message?: string; error?: string }
         if (!response.ok) throw new Error(result.error ?? 'Could not send the reset code. Try again.')
         setFlow('complete-reset')
         setMessage(result.message ?? 'If the admin account is configured, a reset code has been sent to its recovery email.')
@@ -192,7 +204,7 @@ export function AdminLogin() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code: resetCode, password }),
         })
-        const result = await response.json() as { message?: string; error?: string }
+        const result = await parseApiResponse(response) as { message?: string; error?: string }
         if (!response.ok) throw new Error(result.error ?? 'Could not reset the password. Request a new code.')
         setFlow('login')
         setPassword('')
@@ -210,7 +222,7 @@ export function AdminLogin() {
           ? { username, password }
           : { employeeId, activationCode, role: designation }),
       })
-      const result = await response.json() as AccountProfile & { error?: string }
+      const result = await parseApiResponse(response) as AccountProfile & { error?: string }
       if (!response.ok || !result.user || !result.playerId) {
         throw new Error(result.error ?? 'Could not sign in to the staff account.')
       }
