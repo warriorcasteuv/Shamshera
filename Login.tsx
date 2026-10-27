@@ -3,7 +3,12 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { useSherabet } from './store'
 import type { AccountProfile } from './types'
 
-type SupabaseUser = { id: string; email?: string; user_metadata?: { full_name?: string } }
+type SupabaseUser = {
+  id: string
+  email?: string
+  user_metadata?: { full_name?: string }
+  app_metadata?: { role?: string }
+}
 type SupabaseSession = { access_token: string; user: SupabaseUser }
 
 const baseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
@@ -16,11 +21,11 @@ function configured() {
 
 async function auth(path: string, init: RequestInit = {}, token?: string) {
   configured()
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await fetch(baseUrl + path, {
     ...init,
     headers: {
       apikey: anonKey!,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
       'Content-Type': 'application/json',
       ...(init.headers ?? {}),
     },
@@ -41,6 +46,10 @@ function profile(user: SupabaseUser): AccountProfile {
     staffStatus: null,
     permissions: {},
   }
+}
+
+function adminProfile(user: SupabaseUser): AccountProfile {
+  return { ...profile(user), role: 'main_admin', isUnlimited: true }
 }
 
 function saveSession(session: SupabaseSession) {
@@ -74,7 +83,7 @@ export function Login() {
     setMessageIsError(false)
     try {
       if (mode === 'recover') {
-        await auth('/auth/v1/recover', { method: 'POST', body: JSON.stringify({ email, options: { redirectTo: `${window.location.origin}/login` } }) })
+        await auth('/auth/v1/recover', { method: 'POST', body: JSON.stringify({ email, options: { redirectTo: window.location.origin + '/login' } }) })
         setMessage('If an account uses that email, a password-reset link has been sent.')
         return
       }
@@ -118,6 +127,7 @@ export function Login() {
 
   const heading = mode === 'signup' ? 'Create account' : mode === 'recover' ? 'Reset password' : mode === 'reset' ? 'Choose a new password' : 'LaserSport'
   return <div className="login"><form className="login-card" onSubmit={onSubmit}>
+    {mode === 'login' && <div className="login-switch" aria-label="Login type switch"><span className="login-switch-option active">Customer</span><button type="button" className="login-switch-link" onClick={() => navigate('/admin-login')}>Admin login</button></div>}
     <span className="credits-chip">Customer account</span>
     <h1>{heading}</h1>
     {mode === 'recover' && <p>Enter your email and we will send a password-reset link.</p>}
@@ -126,7 +136,7 @@ export function Login() {
     {(mode === 'login' || mode === 'signup' || mode === 'recover') && <label className="auth-field">Email address<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required /></label>}
     {(mode === 'login' || mode === 'signup' || mode === 'reset') && <label className="auth-field">{mode === 'reset' ? 'New password' : 'Password'}<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} required /></label>}
     {(mode === 'signup' || mode === 'reset') && <label className="auth-field">Confirm password<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} required /></label>}
-    {message && <p className={`flash${messageIsError ? ' error' : ''}`} role="status">{message}</p>}
+    {message && <p className={'flash' + (messageIsError ? ' error' : '')} role="status">{message}</p>}
     {mode === 'login' && <button type="button" className="alt-link" onClick={() => { setMode('recover'); setMessage('') }}>Forgot password?</button>}
     <button className="primary" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : mode === 'signup' ? 'Create account' : mode === 'recover' ? 'Send reset link' : mode === 'reset' ? 'Update password' : 'Sign in'}</button>
     {mode !== 'reset' && <p className="auth-switch-copy">{mode === 'signup' ? 'Already have an account?' : mode === 'recover' ? 'Remembered it?' : 'New here?'} <button type="button" className="login-switch-link" onClick={() => { setMode(mode === 'signup' ? 'login' : 'signup'); setMessage('') }}>{mode === 'signup' ? 'Sign in' : 'Sign up'}</button></p>}
@@ -134,6 +144,39 @@ export function Login() {
 }
 
 export function AdminLogin() {
+  const setServerProfile = useSherabet((s) => s.setServerProfile)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [message, setMessage] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
-  return <div className="login"><div className="login-card"><span className="credits-chip">Admin</span><h1>Admin login</h1><p>Admin accounts remain on the existing private backend and are not available on the public Vercel site.</p><button className="primary" type="button" onClick={() => navigate('/login')}>Customer login</button></div></div>
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault()
+    setSubmitting(true)
+    setMessage('')
+    try {
+      const result = await auth('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify({ email, password }) }) as SupabaseSession
+      if (!result.access_token || !result.user) throw new Error('Could not sign in. Please try again.')
+      if (result.user.app_metadata?.role !== 'main_admin') throw new Error('This account does not have Main Admin access.')
+      saveSession(result)
+      setServerProfile(adminProfile(result.user))
+      navigate('/admin')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not connect to the login service.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return <div className="login"><form className="login-card admin-login-card" onSubmit={onSubmit}>
+    <span className="credits-chip">Main Admin</span>
+    <h1>Admin Login</h1>
+    <p>Sign in with the Main Admin email and password.</p>
+    <label className="auth-field">Email address<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></label>
+    <label className="auth-field">Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
+    {message && <p className="flash error" role="status">{message}</p>}
+    <button className="primary" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : 'Enter Admin Desk'}</button>
+    <p className="auth-switch-copy"><button type="button" className="login-switch-link" onClick={() => navigate('/login')}>Customer login</button></p>
+  </form></div>
 }
