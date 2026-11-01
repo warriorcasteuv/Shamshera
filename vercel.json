@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/**/*.ts": {
-      "includeFiles": "{server.ts,catalog.ts,cricket.ts,money.ts,types.ts,dist/**}"
+      "includeFiles": "dist-server/server.mjs"
     }
   },
   "rewrites": [
