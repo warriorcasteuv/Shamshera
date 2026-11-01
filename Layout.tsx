@@ -43,6 +43,7 @@ export function Layout() {
   const hideMyBets = isAdminPage || role === 'main_admin' || isCeo
 
   useEffect(() => {
+    if (user) return
     try {
       const raw = localStorage.getItem(sessionKey)
       if (!raw) throw new Error('Not signed in')
@@ -53,7 +54,7 @@ export function Layout() {
       localStorage.removeItem(sessionKey)
       clearSession()
     }
-  }, [setServerProfile, clearSession])
+  }, [user, setServerProfile, clearSession])
 
   useEffect(() => {
     if (authReady && !user) navigate('/login', { replace: true })
