@@ -13,18 +13,22 @@ type SupabaseSession = { access_token: string; user: SupabaseUser }
 
 const baseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+const resolvedBaseUrl = baseUrl && baseUrl !== 'SUPABASE_URL' ? baseUrl : 'https://thcpbgpquhpvhrdlbulw.supabase.co'
+const resolvedAnonKey = anonKey && anonKey !== 'SUPABASE_PUBLISHABLE_KEY'
+  ? anonKey
+  : 'sb_publishable_FJOYI42sEoEZdHlj_o4qnA_dbmDLrkx'
 const sessionKey = 'lasersport-supabase-session'
 
 function configured() {
-  if (!baseUrl || !anonKey) throw new Error('Login is not configured yet. Please contact support.')
+  if (!resolvedBaseUrl || !resolvedAnonKey) throw new Error('Login is not configured yet. Please contact support.')
 }
 
 async function auth(path: string, init: RequestInit = {}, token?: string) {
   configured()
-  const response = await fetch(baseUrl + path, {
+  const response = await fetch(resolvedBaseUrl + path, {
     ...init,
     headers: {
-      apikey: anonKey!,
+      apikey: resolvedAnonKey,
       ...(token ? { Authorization: 'Bearer ' + token } : {}),
       'Content-Type': 'application/json',
       ...(init.headers ?? {}),
