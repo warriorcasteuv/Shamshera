@@ -52,10 +52,6 @@ function profile(user: SupabaseUser): AccountProfile {
   }
 }
 
-function adminProfile(user: SupabaseUser): AccountProfile {
-  return { ...profile(user), role: 'main_admin', isUnlimited: true }
-}
-
 function saveSession(session: SupabaseSession) {
   localStorage.setItem(sessionKey, JSON.stringify(session))
 }
@@ -149,8 +145,11 @@ export function Login() {
 
 export function AdminLogin() {
   const setServerProfile = useSherabet((s) => s.setServerProfile)
-  const [email, setEmail] = useState('')
+  const [designation, setDesignation] = useState<'main_admin' | 'ceo' | 'manager' | 'employee'>('main_admin')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [employeeId, setEmployeeId] = useState('')
+  const [activationCode, setActivationCode] = useState('')
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
@@ -160,11 +159,20 @@ export function AdminLogin() {
     setSubmitting(true)
     setMessage('')
     try {
-      const result = await auth('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify({ email, password }) }) as SupabaseSession
-      if (!result.access_token || !result.user) throw new Error('Could not sign in. Please try again.')
-      if (result.user.app_metadata?.role !== 'main_admin') throw new Error('This account does not have Main Admin access.')
-      saveSession(result)
-      setServerProfile(adminProfile(result.user))
+      const url = designation === 'main_admin' ? '/api/admin/login' : '/api/staff/login'
+      const body = designation === 'main_admin'
+        ? { username, password }
+        : { role: designation, employeeId, activationCode }
+      const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const result = await response.json().catch(() => ({})) as AccountProfile & { error?: string }
+      if (!response.ok) throw new Error(result.error ?? 'The admin login was rejected.')
+      if (!result.playerId || !result.role) throw new Error('Could not sign in. Please try again.')
+      setServerProfile(result)
       navigate('/admin')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not connect to the login service.')
@@ -174,11 +182,21 @@ export function AdminLogin() {
   }
 
   return <div className="login"><form className="login-card admin-login-card" onSubmit={onSubmit}>
-    <span className="credits-chip">Main Admin</span>
+    <span className="credits-chip">Admin desk</span>
     <h1>Admin Login</h1>
-    <p>Sign in with the Main Admin email and password.</p>
-    <label className="auth-field">Email address<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></label>
-    <label className="auth-field">Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
+    <label className="auth-field">Designation<select value={designation} onChange={(event) => { setDesignation(event.target.value as typeof designation); setMessage('') }}>
+      <option value="main_admin">Main Admin</option>
+      <option value="ceo">CEO</option>
+      <option value="manager">Manager</option>
+      <option value="employee">Employee</option>
+    </select></label>
+    {designation === 'main_admin' ? <>
+      <label className="auth-field">Admin username<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label>
+      <label className="auth-field">Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>
+    </> : <>
+      <label className="auth-field">Employee ID<input value={employeeId} onChange={(event) => setEmployeeId(event.target.value.toUpperCase())} autoComplete="username" required /></label>
+      <label className="auth-field">Activation code<input value={activationCode} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} autoComplete="one-time-code" required /></label>
+    </>}
     {message && <p className="flash error" role="status">{message}</p>}
     <button className="primary" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : 'Enter Admin Desk'}</button>
     <p className="auth-switch-copy"><button type="button" className="login-switch-link" onClick={() => navigate('/login')}>Customer login</button></p>
