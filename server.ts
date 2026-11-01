@@ -277,6 +277,10 @@ function resetMailer() {
     if (!resendApiKey || !resendFrom) {
       throw new HttpError(503, 'Resend email is only partially configured. Set both RESEND_API_KEY and RESEND_FROM on the API server.')
     }
+    if (resendApiKey.includes('replace') || resendApiKey.includes('your_')
+      || (resendApiKey === 're_test_key' && process.env.NODE_ENV !== 'test')) {
+      throw new HttpError(503, 'Resend email is not configured with a real API key.')
+    }
     const apiUrl = process.env.NODE_ENV === 'test' && process.env.RESEND_API_URL
       ? process.env.RESEND_API_URL
       : 'https://api.resend.com/emails'
@@ -310,6 +314,9 @@ function resetMailer() {
   const user = process.env.SMTP_USER
   const password = process.env.SMTP_PASSWORD
   const from = process.env.SMTP_FROM
+  if (password && (password.includes('replace_with') || password.includes('your-google-app-password'))) {
+    throw new HttpError(503, 'Password reset email is not configured with a real SMTP App Password.')
+  }
   if (!host || !Number.isInteger(port) || port < 1 || port > 65535 || !from
     || Boolean(user) !== Boolean(password)) {
     throw new HttpError(503, 'Password reset email is not configured. Set RESEND_API_KEY and RESEND_FROM, or configure SMTP_HOST, SMTP_PORT, and SMTP_FROM on the API server.')

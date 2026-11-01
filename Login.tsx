@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useSherabet } from './store'
 import type { AccountProfile } from './types'
@@ -62,17 +62,13 @@ export function Login() {
   const [mode, setMode] = useState<'login' | 'signup' | 'recover' | 'reset'>('login')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [resetCode, setResetCode] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [message, setMessage] = useState('')
   const [messageIsError, setMessageIsError] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
-
-  useEffect(() => {
-    const token = new URLSearchParams(window.location.hash.slice(1)).get('access_token')
-    if (token) setMode('reset')
-  }, [])
 
   if (user) return <Navigate to="/" replace />
 
@@ -83,20 +79,32 @@ export function Login() {
     setMessageIsError(false)
     try {
       if (mode === 'recover') {
-        await auth('/auth/v1/recover', { method: 'POST', body: JSON.stringify({ email, options: { redirectTo: window.location.origin + '/login' } }) })
-        setMessage('If an account uses that email, a password-reset link has been sent.')
+        const response = await fetch('/api/auth/password-reset/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        })
+        const result = await response.json().catch(() => ({})) as { error?: string; message?: string }
+        if (!response.ok) throw new Error(result.error ?? 'Could not send the reset code.')
+        setResetCode('')
+        setMode('reset')
+        setMessage(result.message ?? 'A password-reset code has been sent to your email.')
         return
       }
       if (mode === 'reset') {
         if (password !== confirmPassword) throw new Error('The passwords do not match.')
-        const token = new URLSearchParams(window.location.hash.slice(1)).get('access_token')
-        if (!token) throw new Error('This password-reset link is invalid or has expired.')
-        await auth('/auth/v1/user', { method: 'PUT', body: JSON.stringify({ password }) }, token)
-        window.location.hash = ''
+        const response = await fetch('/api/auth/password-reset/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code: resetCode, password }),
+        })
+        const result = await response.json().catch(() => ({})) as { error?: string; message?: string }
+        if (!response.ok) throw new Error(result.error ?? 'The reset code is invalid or has expired.')
         setMode('login')
         setPassword('')
         setConfirmPassword('')
-        setMessage('Password updated. You can now sign in.')
+        setResetCode('')
+        setMessage(result.message ?? 'Password updated. You can now sign in.')
         return
       }
       if (mode === 'signup') {
@@ -130,15 +138,16 @@ export function Login() {
     {mode === 'login' && <div className="login-switch" aria-label="Login type switch"><span className="login-switch-option active">Customer</span><button type="button" className="login-switch-link" onClick={() => navigate('/admin-login')}>Admin login</button></div>}
     <span className="credits-chip">Customer account</span>
     <h1>{heading}</h1>
-    {mode === 'recover' && <p>Enter your email and we will send a password-reset link.</p>}
-    {mode === 'reset' && <p>Choose a new password for your account.</p>}
+    {mode === 'recover' && <p>Enter your email and we will send a 6-digit password-reset code.</p>}
+    {mode === 'reset' && <p>Enter the code from your email, then choose a new password.</p>}
+    {mode === 'reset' && <label className="auth-field">6-digit reset code<input value={resetCode} onChange={(event) => setResetCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={6} pattern="[0-9]{6}" required /></label>}
     {mode === 'signup' && <label className="auth-field">Full name<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required minLength={2} maxLength={48} /></label>}
     {(mode === 'login' || mode === 'signup' || mode === 'recover') && <label className="auth-field">Email address<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required /></label>}
     {(mode === 'login' || mode === 'signup' || mode === 'reset') && <label className="auth-field">{mode === 'reset' ? 'New password' : 'Password'}<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} required /></label>}
     {(mode === 'signup' || mode === 'reset') && <label className="auth-field">Confirm password<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} required /></label>}
     {message && <p className={'flash' + (messageIsError ? ' error' : '')} role="status">{message}</p>}
     {mode === 'login' && <button type="button" className="alt-link" onClick={() => { setMode('recover'); setMessage('') }}>Forgot password?</button>}
-    <button className="primary" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : mode === 'signup' ? 'Create account' : mode === 'recover' ? 'Send reset link' : mode === 'reset' ? 'Update password' : 'Sign in'}</button>
+    <button className="primary" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : mode === 'signup' ? 'Create account' : mode === 'recover' ? 'Send reset code' : mode === 'reset' ? 'Update password' : 'Sign in'}</button>
     {mode !== 'reset' && <p className="auth-switch-copy">{mode === 'signup' ? 'Already have an account?' : mode === 'recover' ? 'Remembered it?' : 'New here?'} <button type="button" className="login-switch-link" onClick={() => { setMode(mode === 'signup' ? 'login' : 'signup'); setMessage('') }}>{mode === 'signup' ? 'Sign in' : 'Sign up'}</button></p>}
   </form></div>
 }
