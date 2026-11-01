@@ -1,4 +1,4 @@
-import type { SportEvent, SportId } from './types'
+import type { SportEvent, SportId } from './types.ts'
 export const SPORTS: { id: SportId; label: string; hint: string }[] = [
   { id: 'cricket', label: 'Cricket', hint: 'T20 & ODIs' },
   { id: 'football', label: 'Football', hint: 'Leagues' },

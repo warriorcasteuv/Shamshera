@@ -13,7 +13,7 @@
     "start:api": "node --env-file-if-exists=.env --import tsx server.ts",
     "dev:web": "vite --host 0.0.0.0",
     "build": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && vite build",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "NODE_ENV=test tsx --test tests/*.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

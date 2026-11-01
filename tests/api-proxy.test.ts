@@ -24,63 +24,31 @@ function close(server: Server) {
   })
 }
 
-test('API proxy forwards requests and cookies and enforces method and body limits', async () => {
-  const forwarded: { method?: string; url?: string; cookie?: string; body?: string } = {}
-  const upstream = createServer((request, response) => {
-    void (async () => {
-      const chunks: Buffer[] = []
-      for await (const chunk of request) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-      }
-      forwarded.method = request.method
-      forwarded.url = request.url
-      forwarded.cookie = request.headers.cookie
-      forwarded.body = Buffer.concat(chunks).toString()
-      response.statusCode = 201
-      response.setHeader('Set-Cookie', 'sherabet_session=test; HttpOnly; SameSite=Strict; Secure')
-      response.end(JSON.stringify({ ok: true }))
-    })()
-  })
-  const upstreamPort = await listen(upstream)
-  const originalApiOrigin = process.env.API_ORIGIN
-  process.env.API_ORIGIN = `http://127.0.0.1:${upstreamPort}`
-  const proxy = createServer((request, response) => {
+test('Vercel API function serves authentication routes directly', async () => {
+  const server = createServer((request, response) => {
     void handler(request, response)
   })
 
   try {
-    const proxyPort = await listen(proxy)
-    const proxyOrigin = `http://127.0.0.1:${proxyPort}`
-    const getResponse = await fetch(`${proxyOrigin}/api/auth/session?source=test`, {
-      headers: { Cookie: 'sherabet_session=client-token' },
-    })
-    assert.equal(getResponse.status, 201)
-    assert.equal(getResponse.headers.get('set-cookie'), 'sherabet_session=test; HttpOnly; SameSite=Strict; Secure')
-    assert.deepEqual(await getResponse.json(), { ok: true })
-    assert.equal(forwarded.method, 'GET')
-    assert.equal(forwarded.url, '/api/auth/session?source=test')
-    assert.equal(forwarded.cookie, 'sherabet_session=client-token')
+    const port = await listen(server)
+    const origin = `http://127.0.0.1:${port}`
+    const sessionResponse = await fetch(`${origin}/api/auth/session`)
+    assert.equal(sessionResponse.status, 401)
+    assert.deepEqual(await sessionResponse.json(), { error: 'Sign in to continue.' })
 
-    const postResponse = await fetch(`${proxyOrigin}/api/session`, {
+    const signupResponse = await fetch(`${origin}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Proxy Test' }),
+      body: JSON.stringify({
+        method: 'email',
+        identifier: `api-test-${Date.now()}@example.com`,
+        password: 'test-password-123',
+        name: 'API Test',
+      }),
     })
-    assert.equal(postResponse.status, 201)
-    assert.equal(forwarded.method, 'POST')
-    assert.equal(forwarded.body, JSON.stringify({ name: 'Proxy Test' }))
-
-    const unsupportedResponse = await fetch(`${proxyOrigin}/api/session`, { method: 'PUT' })
-    assert.equal(unsupportedResponse.status, 405)
-
-    const oversizedResponse = await fetch(`${proxyOrigin}/api/session`, {
-      method: 'POST',
-      body: 'x'.repeat(32 * 1024 + 1),
-    })
-    assert.equal(oversizedResponse.status, 413)
+    assert.equal(signupResponse.status, 201)
+    assert.equal(signupResponse.headers.get('set-cookie')?.includes('sherabet_session='), true)
   } finally {
-    if (originalApiOrigin === undefined) delete process.env.API_ORIGIN
-    else process.env.API_ORIGIN = originalApiOrigin
-    await Promise.all([close(proxy), close(upstream)])
+    await close(server)
   }
 })
