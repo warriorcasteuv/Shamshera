@@ -1,5 +1,5 @@
 import express, { type Request, type Response } from 'express'
-import { createHash, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -267,10 +267,10 @@ function issueSession(playerId: string, response: Response) {
   database.prepare('INSERT INTO auth_sessions (token_hash, player_id, expires_at) VALUES (?, ?, ?)')
     .run(tokenHash, playerId, expiresAt)
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
-  response.setHeader('Set-Cookie', `sherabet_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${secure}`)
+  response.append('Set-Cookie', `sherabet_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${secure}`); if (publicRole(roleFor(playerId)) === 'main_admin') adminToken(response)
 }
 
-function resetMailer() {
+function adminToken(r: Response) { const { password } = adminCredentials(); const p = Buffer.from(JSON.stringify({ e: Date.now() + 604800000 })).toString('base64url'); const s = createHmac('sha256', process.env.ADMIN_SESSION_SECRET ?? password).update(p).digest('base64url'); r.append('Set-Cookie', `lasersport_admin=${p}.${s}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800; Secure`) } function hasAdminToken(r: Request) { try { const t = r.headers.cookie?.split(';').map(x => x.trim()).find(x => x.startsWith('lasersport_admin='))?.slice(17); const [p, s] = t?.split('.') ?? []; const e = createHmac('sha256', process.env.ADMIN_SESSION_SECRET ?? adminCredentials().password).update(p ?? '').digest('base64url'); return !!p && !!s && s.length === e.length && timingSafeEqual(Buffer.from(s), Buffer.from(e)) && (JSON.parse(Buffer.from(p, 'base64url').toString()) as { e: number }).e > Date.now() } catch { return false } } function resetMailer() {
   const resendApiKey = process.env.RESEND_API_KEY
   const resendFrom = process.env.RESEND_FROM
   if (resendApiKey || resendFrom) {
@@ -357,7 +357,7 @@ function sessionPlayer(request: Request) {
   return player
 }
 
-function requireMainAdmin(request: Request) {
+function requireMainAdmin(request: Request) { if (hasAdminToken(request)) return
   const player = sessionPlayer(request)
   if (publicRole(roleFor(player.id)) !== 'main_admin') throw new HttpError(403, 'Only the main admin can manage team accounts.')
   return player
@@ -1040,7 +1040,7 @@ app.post('/api/auth/logout', endpoint((request, response) => {
     database.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash)
   }
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
-  response.setHeader('Set-Cookie', `sherabet_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`)
+  response.setHeader('Set-Cookie', `sherabet_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`); response.append('Set-Cookie', `lasersport_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`)
   response.json({ ok: true })
 }))
 
